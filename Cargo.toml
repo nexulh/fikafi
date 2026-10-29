@@ -1,0 +1,12 @@
+[package]
+name = "fikafi"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+enum_dispatch = "0.3.13"
+rand = "0.10.3"
+rand_distr = "0.6.0"
+rayon = "1.12.0"
+rust_decimal = { version = "1.43.0", features = ["macros", "maths"] }
+serde = { version = "1.0", features = ["derive"] }

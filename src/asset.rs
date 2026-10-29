@@ -1,0 +1,33 @@
+use enum_dispatch::enum_dispatch;
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+
+pub mod inkomstpension;
+pub mod isk;
+pub mod premiepension;
+pub mod tjanstepension;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[enum_dispatch(AccountOperations)]
+pub enum Account {
+    Isk(isk::IskAccount),
+    //Depa(depa::DepaAccount),
+    Tjanstepension(tjanstepension::TjanstepensionAccount),
+    Inkomstpension(inkomstpension::InkomstpensionAccount),
+    Premiepension(premiepension::PremiepensionAccount),
+}
+
+#[enum_dispatch]
+pub trait AccountOperations {
+    fn value(&self) -> Decimal;
+    fn deposit(&mut self, amount: Decimal);
+    fn withdraw(&mut self, amount: Decimal) -> Decimal;
+    fn step_month(&mut self);
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PensionState {
+    Accumulating,
+    Annuitizing,
+    Depleted,
+}
