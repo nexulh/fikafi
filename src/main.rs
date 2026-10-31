@@ -1,4 +1,3 @@
-use rand;
 use rayon::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal::MathematicalOps;
@@ -25,7 +24,7 @@ fn run_market_sampler_test(sim_runs: usize) -> Decimal {
             let mut total_return = dec!(1);
 
             for _ in 0..sim_months {
-                let monthly_return = sampler.sample_month::<rand::rngs::ThreadRng>(&mut rng);
+                let monthly_return = sampler.sample_month(&mut rng);
                 total_return *= dec!(1) + monthly_return;
             }
             //let mean_cagr =
@@ -34,8 +33,7 @@ fn run_market_sampler_test(sim_runs: usize) -> Decimal {
             ((total_return).powd(dec!(12) / Decimal::from(sim_months)) - dec!(1)) * dec!(100)
         })
         .collect();
-    let avg_cagr = cagr_values.iter().sum::<Decimal>() / Decimal::from(cagr_values.len() as u32);
-    avg_cagr
+    cagr_values.iter().sum::<Decimal>() / Decimal::from(cagr_values.len() as u32)
 }
 
 fn main() {

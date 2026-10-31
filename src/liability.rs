@@ -14,3 +14,10 @@ pub enum Liability {
         term_months: u32,
     },
 }
+
+pub trait LiabilityOperations {
+    fn balance(&self) -> Decimal;
+    fn monthly_obligation(&mut self) -> Decimal;
+    fn pay(&mut self, amount: Decimal) -> Decimal;
+    fn step_month(&mut self);
+}

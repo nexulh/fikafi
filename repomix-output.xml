@@ -1,0 +1,647 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+docs/
+  DESIGN.md
+src/
+  asset/
+    inkomstpension.rs
+    isk.rs
+    premiepension.rs
+    tjanstepension.rs
+  asset.rs
+  context.rs
+  liability.rs
+  lib.rs
+  main.rs
+  market_sampler.rs
+  portfolio.rs
+  taxes.rs
+.gitignore
+Cargo.toml
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="docs/DESIGN.md">
+# Swedish Retirement Monte Carlo Engine: Architecture & Design Rationale
+
+## 1. Nailed-Down Constraints & Fixed Decisions
+
+* **Separate `assets` and `liabilities` Vectors:** `Portfolio` explicitly maintains `pub assets: Vec<Asset>` and `pub liabilities: Vec<Liability>`. Assets and liabilities have inverted operational lifecycles; forcing them under a single trait/umbrella introduced friction without benefit. Net worth remains $TotalAssets - TotalLiabilities$.
+* **Dedicated `cash` Clearinghouse:** `cash: Currency` lives directly on `Portfolio` as a first-class field. All operational inflows (salary, pensions, liquidations) and outflows (living expenses, debt service, deposits) pass through `cash`. Long-term capital growth is completely isolated from daily liquidity management.
+* **Singular Module Naming:** Modules are strictly named in the singular (`asset.rs`, `liability.rs`) per Rust API guidelines and namespace ergonomics (`asset::Asset` vs `assets::Asset`).
+* **Explicit Chronological Pipeline:** The monthly simulation loop is an explicit pipeline in the simulator orchestrator, not hidden inside heavy account methods:
+  $$\text{Inflows} \longrightarrow \text{Debt Service \& Expenses} \longrightarrow \text{Strategy Execution (Surplus/Deficit)} \longrightarrow \text{Step Market Returns}$$
+* **`step_month` Runs LAST:** Market returns and quarter-end snapshots execute at the *end* of the monthly loop iteration. This ensures all monthly cash flows participate in that month's compounding and quarter-end ISK snapshots catch fully settled balances.
+* **Encapsulated ISK Tax Tracking:** `IskAccount` tracks its own 4 quarterly snapshots (`[Currency; 4]`) and annual deposits (`Currency`).
+* **Mid-Year Startup via Pre-Filled Quarters:** When instantiating an ISK mid-year, all four quarter slots in `quarter_values` are pre-filled with the starting balance (`[starting_balance; 4]`). Elapsed quarters retain this baseline proxy, while future quarter-ends during the simulation naturally overwrite their respective slots.
+
+---
+
+## 2. Swedish Tax Reconciliation & Cash Flow Model
+
+* **Preliminary Monthly Deductions vs. Year-End Settlement:** 
+  * Inflows (salaries, pension disbursements) are processed monthly with **preliminary tax withheld** at source, mirroring real-world Swedish tax mechanics.
+  * At Month 12 (December year-end), the `TaxEngine` aggregates all `TaxBase` items emitted across the portfolio (ISK *schablonunderlag*, realized gains, mortgage *ränteavdrag*) alongside total annual income taxes paid.
+  * The net tax variance (tax debt or refund/credit) is settled in `portfolio.cash` as a true fiscal year-end reconciliation.
+* **Capital Tax vs. Income Tax Distinction:**
+  * **`tax_base()`** handles **wrapper & debt taxation** (ISK *schablonskatt*, mortgage interest deductions).
+  * **Income logic** handles **earned/pension income** (*kommunalskatt*, *statlig skatt*, *grundavdrag* / *förhöjt grundavdrag*).
+
+---
+
+## 3. Pluggable Strategy Architecture (Extensibility Framework)
+
+Rather than hardcoding cash routing and liquidation rules into the simulation loop, operations will be driven by **Pluggable Strategy Patterns**:
+
+* **`ExpenseStrategy` / Liquidation Priority:** Defines how deficits in `portfolio.cash` are covered. `cash` is always drawn down first as the primary clearing buffer, followed by a configurable asset liquidation chain (e.g., Cash $\rightarrow$ Savings $\rightarrow$ ISK $\rightarrow$ Taxable Depot $\rightarrow$ Pension Drawdown).
+* **`InvestmentStrategy` / Surplus Sweeping:** Defines how month-end cash surplus exceeding an emergency buffer is allocated across long-term asset wrappers.
+* **`AssetAllocationStrategy` / Rebalancing:** Handles periodic portfolio rebalancing across macro asset classes.
+
+---
+
+## 4. Rejected Alternatives & Discarded Approaches
+
+* **Unified "Account" Umbrella for Assets and Debt:**
+  * *Discarded:* Trying to make `Liability` implement an asset-centric `AccountOps` trait or putting debt into an `Account` enum.
+  * *Reason:* Liabilities carry mandatory amortization (*amorteringskrav*) and interest expense logic; assets carry yield and tax-wrapper rules. Combining them required awkward default trait implementations.
+* **Banking-Centric Naming (`Account` vs `LiabilityAccount`):**
+  * *Discarded:* Keeping `Account` for assets and naming debt `LiabilityAccount`.
+  * *Reason:* Asymmetric and clumsy. Renaming the asset enum to `Asset` established textbook balance-sheet symmetry (`Asset` / `Liability`).
+* **Monolithic "God Method" `step_month`:**
+  * *Discarded:* Having `step_month` internally trigger payouts, fee deductions, cash routing, and tax checks.
+  * *Reason:* Caused implicit ordering bugs, bloated method signatures, and obscured exact event chronology.
+* **Embedding Cash inside `Vec<Asset>`:**
+  * *Discarded:* Treating cash as just another asset variant.
+  * *Reason:* Required constant array searching/filtering during monthly cash-flow execution and complicated surplus/deficit routing.
+* **Asset-Level Pension Tax Calculation:**
+  * *Discarded:* Forcing pension variants (*Inkomstpension*, *Premiepension*, *Tjänstepension*) to return a capital tax base via `tax_base()`.
+  * *Reason:* Pension accounts during accumulation are tax-deferred containers with zero annual capital tax base. During drawdown, payouts are gross earned income (*tjänsteinkomst*), which belong in the income tax engine.
+
+---
+
+## 5. Active Explorations & Open Architecture Vectors
+
+1. **Stochastic Macro Generator:** Designing the correlated multi-variable engine generating monthly equity returns, inflation indices, *statslåneränta*, and mortgage interest rates (`&MacroStep`).
+2. **Liability Servicing Engine:** Modeling specific Swedish mortgage rules inside `liability.rs` (calculating LTV tiers, income-to-loan ratios, and mandatory *amorteringskrav* deductions).
+3. **Trait / Interface Definitions for Pluggable Strategies:** Defining the Rust trait signatures for `ExpenseStrategy` and `InvestmentStrategy` so they can manipulate `Portfolio` balances cleanly without violating borrowing rules.
+
+---
+
+## 6. Domain Terminology & Core Mental Model
+
+* **Wrapper vs. Asset:** In Swedish retirement planning, the container (e.g., ISK, *Aktiedepå*, *Tjänstepension*) dictates tax rules and liquidity, while the internal balance represents capital. The model treats wrapper accounts as discrete `Asset` variants.
+* **`TaxBase` & `TaxBaseType`:** A lightweight reporting struct emitted by assets and liabilities via `tax_base(&mut self) -> Option<TaxBase>`:
+  * `TaxBaseType::IskCapitalBase`: Raw *schablonunderlag* ($\frac{\sum Q}{4} + \text{Deposits}$).
+  * `TaxBaseType::DeductibleInterest`: Mortgage interest paid during the fiscal year for Swedish *ränteavdrag*.
+  * `TaxBaseType::RealizedCapitalGain`: Capital gains/losses from standard taxable depots.
+</file>
+
+<file path="src/taxes.rs">
+use rust_decimal::Decimal;
+
+pub enum TaxBaseType {
+    IskCapitalBase,
+    RealizedCapitalGains,
+    DeductibleInterest,
+    TaxableIncome,
+}
+
+pub struct TaxBase {
+    pub kind: TaxBaseType,
+    pub amount: Decimal,
+}
+</file>
+
+<file path="src/asset/inkomstpension.rs">
+use rust_decimal::Decimal;
+use rust_decimal::dec;
+use serde::{Deserialize, Serialize};
+
+use crate::asset::AssetOperations;
+use crate::context::MarketContext;
+use crate::taxes;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InkomstpensionAccount {
+    pub balance: Decimal,
+}
+
+impl AssetOperations for InkomstpensionAccount {
+    fn value(&self) -> Decimal {
+        self.balance
+    }
+
+    fn deposit(&mut self, amount: Decimal) {
+        self.balance += amount;
+    }
+
+    fn withdraw(&mut self, _amount: Decimal) -> Decimal {
+        dec!(0)
+    }
+
+    fn tax_base(&self) -> Option<taxes::TaxBase> {
+        None
+    }
+
+    fn step_month(&mut self, _market_context: &MarketContext) {
+        // No-op for InkomstpensionAccount
+    }
+}
+</file>
+
+<file path="src/asset/isk.rs">
+use crate::asset::AssetOperations;
+use rust_decimal::Decimal;
+use rust_decimal::dec;
+use serde::{Deserialize, Serialize};
+
+use crate::context::MarketContext;
+use crate::taxes;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IskAccount {
+    pub balance: Decimal,
+    annual_deposits: Decimal,
+    quarter_values: [Decimal; 4],
+}
+
+impl IskAccount {
+    pub fn new(balance: Decimal) -> Self {
+        if balance < Decimal::ZERO {
+            panic!("Balance cannot be negative");
+        }
+        Self {
+            balance,
+            annual_deposits: Decimal::ZERO,
+            quarter_values: [balance; 4],
+        }
+    }
+}
+
+impl AssetOperations for IskAccount {
+    fn value(&self) -> Decimal {
+        self.balance
+    }
+
+    fn deposit(&mut self, amount: Decimal) {
+        self.balance += amount;
+        self.annual_deposits += amount;
+    }
+
+    fn withdraw(&mut self, amount: Decimal) -> Decimal {
+        let withdrawn = if self.balance < amount {
+            self.balance
+        } else {
+            amount
+        };
+        self.balance -= withdrawn;
+        withdrawn
+    }
+
+    fn tax_base(&self) -> Option<taxes::TaxBase> {
+        let isk_capital_base =
+            self.quarter_values.iter().sum::<Decimal>() / dec!(4) + self.annual_deposits;
+        Some(taxes::TaxBase {
+            kind: taxes::TaxBaseType::IskCapitalBase,
+            amount: isk_capital_base,
+        })
+    }
+
+    fn step_month(&mut self, market_context: &MarketContext) {
+        self.balance *= dec!(1)
+            + Decimal::from_f64_retain(market_context.monthly_market_return)
+                .unwrap_or(Decimal::ZERO);
+        match market_context.calendar_month {
+            3 => self.quarter_values[0] = self.balance,
+            6 => self.quarter_values[1] = self.balance,
+            9 => self.quarter_values[2] = self.balance,
+            12 => self.quarter_values[3] = self.balance,
+            _ => (),
+        }
+    }
+}
+</file>
+
+<file path="src/asset/premiepension.rs">
+use rust_decimal::Decimal;
+use rust_decimal::dec;
+use serde::{Deserialize, Serialize};
+
+use crate::asset::AssetOperations;
+use crate::context::MarketContext;
+use crate::taxes;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PremiepensionAccount {
+    pub balance: Decimal,
+}
+
+impl AssetOperations for PremiepensionAccount {
+    fn value(&self) -> Decimal {
+        self.balance
+    }
+
+    fn deposit(&mut self, amount: Decimal) {
+        self.balance += amount;
+    }
+
+    fn withdraw(&mut self, _amount: Decimal) -> Decimal {
+        dec!(0)
+    }
+
+    fn tax_base(&self) -> Option<taxes::TaxBase> {
+        None
+    }
+
+    fn step_month(&mut self, _market_context: &MarketContext) {
+        // No-op for PremiepensionAccount
+    }
+}
+</file>
+
+<file path="src/asset/tjanstepension.rs">
+use rust_decimal::Decimal;
+use rust_decimal::dec;
+use serde::{Deserialize, Serialize};
+
+use crate::asset::AssetOperations;
+use crate::context::MarketContext;
+use crate::taxes;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TjanstepensionAccount {
+    pub balance: Decimal,
+}
+
+impl AssetOperations for TjanstepensionAccount {
+    fn value(&self) -> Decimal {
+        self.balance
+    }
+
+    fn deposit(&mut self, amount: Decimal) {
+        self.balance += amount;
+    }
+
+    fn withdraw(&mut self, _amount: Decimal) -> Decimal {
+        dec!(0)
+    }
+
+    fn tax_base(&self) -> Option<taxes::TaxBase> {
+        None
+    }
+
+    fn step_month(&mut self, _market_context: &MarketContext) {
+        // No-op for TjanstepensionAccount
+    }
+}
+</file>
+
+<file path="src/asset.rs">
+use crate::taxes::TaxBase;
+use enum_dispatch::enum_dispatch;
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+
+pub mod inkomstpension;
+pub mod isk;
+pub mod premiepension;
+pub mod tjanstepension;
+
+use crate::context::MarketContext;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[enum_dispatch(AssetOperations)]
+pub enum Asset {
+    Isk(isk::IskAccount),
+    //Depa(depa::DepaAccount),
+    Tjanstepension(tjanstepension::TjanstepensionAccount),
+    Inkomstpension(inkomstpension::InkomstpensionAccount),
+    Premiepension(premiepension::PremiepensionAccount),
+}
+
+#[enum_dispatch]
+pub trait AssetOperations {
+    fn value(&self) -> Decimal;
+    fn deposit(&mut self, amount: Decimal);
+    fn withdraw(&mut self, amount: Decimal) -> Decimal;
+    fn tax_base(&self) -> Option<TaxBase>;
+    fn step_month(&mut self, market_context: &MarketContext);
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PensionState {
+    Accumulating,
+    Annuitizing,
+    Depleted,
+}
+</file>
+
+<file path="src/context.rs">
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketContext {
+    pub calendar_year: usize,
+    pub calendar_month: usize,
+    pub user_age: usize,
+    pub monthly_market_return: f64,
+    pub monthly_inflation_rate: f64,
+    pub statslaneranta: f64,
+    pub prisbasbelopp: Decimal,
+    pub inkomstbasbelopp: Decimal,
+}
+</file>
+
+<file path="src/liability.rs">
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Liability {
+    Mortgage {
+        principal: Decimal,
+        interest_rate: Decimal,
+        term_months: u32,
+    },
+    Loan {
+        principal: Decimal,
+        interest_rate: Decimal,
+        term_months: u32,
+    },
+}
+
+pub trait LiabilityOperations {
+    fn balance(&self) -> Decimal;
+    fn monthly_obligation(&mut self) -> Decimal;
+    fn pay(&mut self, amount: Decimal) -> Decimal;
+    fn step_month(&mut self);
+}
+</file>
+
+<file path="src/lib.rs">
+pub mod asset;
+pub mod context;
+pub mod liability;
+pub mod portfolio;
+pub mod taxes;
+</file>
+
+<file path="src/main.rs">
+use rayon::prelude::*;
+use rust_decimal::Decimal;
+use rust_decimal::MathematicalOps;
+use rust_decimal::dec;
+
+use fikafi::portfolio::Portfolio;
+
+mod market_sampler;
+use market_sampler::*;
+
+fn run_market_sampler_test(sim_runs: usize) -> Decimal {
+    let sim_months = 12 * 30; // 30 years of monthly returns
+    let sampler = MarketSampler::new();
+
+    //let mut cagr_values: Vec<Decimal> = Vec::with_capacity(sim_runs);
+    //for _ in 0..sim_runs {
+    let cagr_values: Vec<Decimal> = (0..sim_runs)
+        .into_par_iter()
+        .map(|_| {
+            let mut rng = rand::rng();
+
+            // Initialize variables for this simulation run
+            let mut sampler = sampler.clone();
+            let mut total_return = dec!(1);
+
+            for _ in 0..sim_months {
+                let monthly_return = sampler.sample_month(&mut rng);
+                total_return *= dec!(1) + monthly_return;
+            }
+            //let mean_cagr =
+            //    ((total_return).powd(dec!(12) / Decimal::from(sim_months)) - dec!(1)) * dec!(100);
+            //cagr_values.push(mean_cagr);
+            ((total_return).powd(dec!(12) / Decimal::from(sim_months)) - dec!(1)) * dec!(100)
+        })
+        .collect();
+    cagr_values.iter().sum::<Decimal>() / Decimal::from(cagr_values.len() as u32)
+}
+
+fn main() {
+    println!("Starting portfolio calculation...");
+    let portfolio = Portfolio {
+        assets: vec![],
+        liabilities: vec![],
+        liquid_cash: dec!(100_000.0),
+    };
+    println!("{}", portfolio.total_nominal_value().round_dp(2));
+
+    let sim_runs = 10_000;
+    let start = std::time::Instant::now();
+    let avg_cagr = run_market_sampler_test(sim_runs);
+    let duration = start.elapsed();
+
+    println!("Average CAGR: {:.3}%", avg_cagr);
+    println!("Simulation duration: {:?}", duration);
+}
+</file>
+
+<file path="src/market_sampler.rs">
+use rand::Rng;
+use rand_distr::{Distribution, StudentT, Uniform};
+use rust_decimal::Decimal;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarketRegime {
+    Bull,
+    Bear,
+}
+
+#[derive(Debug, Clone)]
+pub struct MarketSampler {
+    state: MarketRegime,
+    // Transition probabilities per month
+    p_bull_to_bear: f64,
+    p_bear_to_bull: f64,
+    // Bull Regime Parameters (Monthly)
+    bull_mean: f64,
+    bull_scale: f64,
+    bull_df: f64, // Degrees of freedom (fat tails)
+    // Bear Regime Parameters (Monthly)
+    bear_mean: f64,
+    bear_scale: f64,
+    bear_df: f64,
+}
+
+impl MarketSampler {
+    /// Creates a calibrated sampler with realistic monthly defaults:
+    /// - Bull: ~8% annualized geometric return, low volatility (~12% annual scale)
+    /// - Bear: Sharp negative drift, high volatility (~30% annual scale, heavy tails)
+    pub fn new() -> Self {
+        let bull_df = 8.0;
+        let bear_df = 4.0;
+
+        let bull_target_annual_vol = 0.14;
+        let bear_target_annual_vol = 0.24;
+
+        let bull_monthly_vol = bull_target_annual_vol / (12.0f64).sqrt();
+        let bear_monthly_vol = bear_target_annual_vol / (12.0f64).sqrt();
+
+        let bull_scale = bull_monthly_vol * (bull_df / (bull_df - 2.0f64)).sqrt();
+        let bear_scale = bear_monthly_vol * (bear_df / (bear_df - 2.0f64)).sqrt();
+
+        Self {
+            state: MarketRegime::Bull,
+            // ~1.5% monthly chance to switch to bear (~5.5 year average bull duration)
+            p_bull_to_bear: 0.01,
+            // ~15% monthly chance to recover (~6.7 month average bear duration)
+            p_bear_to_bull: 0.20,
+
+            // Bull Parameters
+            bull_mean: 0.0095, // ~8.9 annualized arithmetic drift in bull
+            bull_scale,
+            bull_df,
+
+            // Bear Parameters
+            bear_mean: 0.0, // Mild drag during bear regime
+            bear_scale,
+            bear_df,
+        }
+    }
+
+    /// Evaluates the Markov transition matrix and samples a monthly return percentage.
+    pub fn sample_month(&mut self, rng: &mut impl Rng) -> Decimal {
+        // 1. State Transition Check (Markov Chain)
+        let uniform = Uniform::new(0.0, 1.0).unwrap();
+        let roll: f64 = uniform.sample(rng);
+
+        match self.state {
+            MarketRegime::Bull => {
+                if roll < self.p_bull_to_bear {
+                    self.state = MarketRegime::Bear;
+                }
+            }
+            MarketRegime::Bear => {
+                if roll < self.p_bear_to_bull {
+                    self.state = MarketRegime::Bull;
+                }
+            }
+        }
+
+        // 2. Select distribution parameters based on current active regime
+        let (mean, scale, df) = match self.state {
+            MarketRegime::Bull => (self.bull_mean, self.bull_scale, self.bull_df),
+            MarketRegime::Bear => (self.bear_mean, self.bear_scale, self.bear_df),
+        };
+
+        // 3. Draw from Student's t-distribution
+        let t_dist = StudentT::new(df).unwrap_or_else(|_| StudentT::new(5.0).unwrap());
+        let t_sample: f64 = t_dist.sample(rng);
+
+        // 4. Scale and shift to match desired mean and volatility
+        let raw_return = mean + scale * t_sample;
+
+        // 5. Convert to high-precision Decimal
+        Decimal::from_f64_retain(raw_return).unwrap_or(Decimal::ZERO)
+    }
+
+    #[allow(dead_code)]
+    pub fn current_regime(&self) -> MarketRegime {
+        self.state
+    }
+}
+</file>
+
+<file path="src/portfolio.rs">
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+
+use crate::asset::AssetOperations;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Portfolio {
+    pub assets: Vec<crate::asset::Asset>,
+    pub liabilities: Vec<crate::liability::Liability>,
+    pub liquid_cash: Decimal,
+}
+
+impl Portfolio {
+    pub fn total_nominal_value(&self) -> Decimal {
+        self.assets
+            .iter()
+            .map(|account| account.value())
+            .sum::<Decimal>()
+            - self
+                .liabilities
+                .iter()
+                .map(|liability| match liability {
+                    crate::liability::Liability::Mortgage { principal, .. } => *principal,
+                    crate::liability::Liability::Loan { principal, .. } => *principal,
+                })
+                .sum::<Decimal>()
+            + self.liquid_cash
+    }
+}
+</file>
+
+<file path=".gitignore">
+/target
+</file>
+
+<file path="Cargo.toml">
+[package]
+name = "fikafi"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+enum_dispatch = "0.3.13"
+rand = "0.10.3"
+rand_distr = "0.6.0"
+rayon = "1.12.0"
+rust_decimal = { version = "1.43.0", features = ["macros", "maths"] }
+serde = { version = "1.0", features = ["derive"] }
+</file>
+
+</files>

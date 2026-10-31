@@ -61,7 +61,7 @@ impl MarketSampler {
     }
 
     /// Evaluates the Markov transition matrix and samples a monthly return percentage.
-    pub fn sample_month<R: Rng>(&mut self, rng: &mut impl Rng) -> Decimal {
+    pub fn sample_month(&mut self, rng: &mut impl Rng) -> Decimal {
         // 1. State Transition Check (Markov Chain)
         let uniform = Uniform::new(0.0, 1.0).unwrap();
         let roll: f64 = uniform.sample(rng);

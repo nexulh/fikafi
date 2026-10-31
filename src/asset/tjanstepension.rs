@@ -2,12 +2,16 @@ use rust_decimal::Decimal;
 use rust_decimal::dec;
 use serde::{Deserialize, Serialize};
 
+use crate::asset::AssetOperations;
+use crate::context::MarketContext;
+use crate::taxes;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TjanstepensionAccount {
     pub balance: Decimal,
 }
 
-impl crate::asset::AccountOperations for TjanstepensionAccount {
+impl AssetOperations for TjanstepensionAccount {
     fn value(&self) -> Decimal {
         self.balance
     }
@@ -20,7 +24,11 @@ impl crate::asset::AccountOperations for TjanstepensionAccount {
         dec!(0)
     }
 
-    fn step_month(&mut self) {
+    fn tax_base(&self) -> Option<taxes::TaxBase> {
+        None
+    }
+
+    fn step_month(&mut self, _market_context: &MarketContext) {
         // No-op for TjanstepensionAccount
     }
 }
