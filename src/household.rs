@@ -25,12 +25,12 @@ impl Person {
     }
 
     #[must_use]
-    pub fn age_on(&self, yearmonth: YearMonth) -> u32 {
-        (yearmonth.months_since_epoch() - self.born.months_since_epoch()) / 12
+    pub fn age_on(&self, target_year_month: YearMonth) -> u32 {
+        (target_year_month.months_since_epoch() - self.born.months_since_epoch()) / 12
     }
 
     #[must_use]
-    pub fn has_reached_age(&self, yearmonth: YearMonth, target_age: u32) -> bool {
-        self.age_on(yearmonth) >= target_age
+    pub fn has_reached_age(&self, target_year_month: YearMonth, target_age: u32) -> bool {
+        self.age_on(target_year_month) >= target_age
     }
 }
