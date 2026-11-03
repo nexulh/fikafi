@@ -6,14 +6,12 @@ use rust_decimal::dec;
 use fikafi::portfolio::Portfolio;
 
 mod market_sampler;
-use market_sampler::*;
+use market_sampler::MarketSampler;
 
 fn run_market_sampler_test(sim_runs: usize) -> Decimal {
     let sim_months = 12 * 30; // 30 years of monthly returns
     let sampler = MarketSampler::new();
 
-    //let mut cagr_values: Vec<Decimal> = Vec::with_capacity(sim_runs);
-    //for _ in 0..sim_runs {
     let cagr_values: Vec<Decimal> = (0..sim_runs)
         .into_par_iter()
         .map(|_| {
@@ -33,7 +31,7 @@ fn run_market_sampler_test(sim_runs: usize) -> Decimal {
             ((total_return).powd(dec!(12) / Decimal::from(sim_months)) - dec!(1)) * dec!(100)
         })
         .collect();
-    cagr_values.iter().sum::<Decimal>() / Decimal::from(cagr_values.len() as u32)
+    cagr_values.iter().sum::<Decimal>() / Decimal::from(cagr_values.len())
 }
 
 fn main() {
@@ -50,6 +48,6 @@ fn main() {
     let avg_cagr = run_market_sampler_test(sim_runs);
     let duration = start.elapsed();
 
-    println!("Average CAGR: {:.3}%", avg_cagr);
-    println!("Simulation duration: {:?}", duration);
+    println!("Average CAGR: {avg_cagr:.3}%");
+    println!("Simulation duration: {duration:?}");
 }

@@ -8,7 +8,7 @@ pub mod isk;
 pub mod premiepension;
 pub mod tjanstepension;
 
-use crate::context::MarketContext;
+use crate::context::MonthlyMarketContext;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[enum_dispatch(AssetOperations)]
@@ -26,7 +26,7 @@ pub trait AssetOperations {
     fn deposit(&mut self, amount: Decimal);
     fn withdraw(&mut self, amount: Decimal) -> Decimal;
     fn tax_base(&self) -> Option<TaxBase>;
-    fn step_month(&mut self, market_context: &MarketContext);
+    fn step_month(&mut self, market_context: &MonthlyMarketContext);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

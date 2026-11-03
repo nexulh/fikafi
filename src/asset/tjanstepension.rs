@@ -3,7 +3,7 @@ use rust_decimal::dec;
 use serde::{Deserialize, Serialize};
 
 use crate::asset::AssetOperations;
-use crate::context::MarketContext;
+use crate::context::MonthlyMarketContext;
 use crate::taxes;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,7 +28,7 @@ impl AssetOperations for TjanstepensionAccount {
         None
     }
 
-    fn step_month(&mut self, _market_context: &MarketContext) {
+    fn step_month(&mut self, _market_context: &MonthlyMarketContext) {
         // No-op for TjanstepensionAccount
     }
 }

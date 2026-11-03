@@ -17,11 +17,13 @@ pub struct MarketSampler {
     // Bull Regime Parameters (Monthly)
     bull_mean: f64,
     bull_scale: f64,
-    bull_df: f64, // Degrees of freedom (fat tails)
     // Bear Regime Parameters (Monthly)
     bear_mean: f64,
     bear_scale: f64,
-    bear_df: f64,
+
+    bull_dist: StudentT<f64>,
+    bear_dist: StudentT<f64>,
+    uniform_dist: Uniform<f64>,
 }
 
 impl MarketSampler {
@@ -41,6 +43,13 @@ impl MarketSampler {
         let bull_scale = bull_monthly_vol * (bull_df / (bull_df - 2.0f64)).sqrt();
         let bear_scale = bear_monthly_vol * (bear_df / (bear_df - 2.0f64)).sqrt();
 
+        #[allow(clippy::unwrap_used)]
+        let uniform_dist = Uniform::new(0.0, 1.0).unwrap();
+        #[allow(clippy::unwrap_used)]
+        let bull_dist = StudentT::new(bull_df).unwrap();
+        #[allow(clippy::unwrap_used)]
+        let bear_dist = StudentT::new(bear_df).unwrap();
+
         Self {
             state: MarketRegime::Bull,
             // ~1.5% monthly chance to switch to bear (~5.5 year average bull duration)
@@ -51,20 +60,22 @@ impl MarketSampler {
             // Bull Parameters
             bull_mean: 0.0095, // ~8.9 annualized arithmetic drift in bull
             bull_scale,
-            bull_df,
 
             // Bear Parameters
             bear_mean: 0.0, // Mild drag during bear regime
             bear_scale,
-            bear_df,
+
+            bull_dist,
+            bear_dist,
+            uniform_dist,
         }
     }
 
     /// Evaluates the Markov transition matrix and samples a monthly return percentage.
     pub fn sample_month(&mut self, rng: &mut impl Rng) -> Decimal {
         // 1. State Transition Check (Markov Chain)
-        let uniform = Uniform::new(0.0, 1.0).unwrap();
-        let roll: f64 = uniform.sample(rng);
+        #[allow(clippy::unwrap_used)]
+        let roll = self.uniform_dist.sample(rng);
 
         match self.state {
             MarketRegime::Bull => {
@@ -80,14 +91,14 @@ impl MarketSampler {
         }
 
         // 2. Select distribution parameters based on current active regime
-        let (mean, scale, df) = match self.state {
-            MarketRegime::Bull => (self.bull_mean, self.bull_scale, self.bull_df),
-            MarketRegime::Bear => (self.bear_mean, self.bear_scale, self.bear_df),
+        let (mean, scale, dist) = match self.state {
+            MarketRegime::Bull => (self.bull_mean, self.bull_scale, self.bull_dist),
+            MarketRegime::Bear => (self.bear_mean, self.bear_scale, self.bear_dist),
         };
 
         // 3. Draw from Student's t-distribution
-        let t_dist = StudentT::new(df).unwrap_or_else(|_| StudentT::new(5.0).unwrap());
-        let t_sample: f64 = t_dist.sample(rng);
+        #[allow(clippy::unwrap_used)]
+        let t_sample: f64 = dist.sample(rng);
 
         // 4. Scale and shift to match desired mean and volatility
         let raw_return = mean + scale * t_sample;

@@ -3,7 +3,7 @@ use rust_decimal::Decimal;
 use rust_decimal::dec;
 use serde::{Deserialize, Serialize};
 
-use crate::context::MarketContext;
+use crate::context::MonthlyMarketContext;
 use crate::taxes;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,10 +14,12 @@ pub struct IskAccount {
 }
 
 impl IskAccount {
+    /// Creates a new ISK account with the specified initial balance.
+    /// # Panics
+    /// Panics if the balance is strictly less than zero.
+    #[must_use]
     pub fn new(balance: Decimal) -> Self {
-        if balance < Decimal::ZERO {
-            panic!("Balance cannot be negative");
-        }
+        assert!(balance >= Decimal::ZERO, "Balance cannot be negative");
         Self {
             balance,
             annual_deposits: Decimal::ZERO,
@@ -55,11 +57,9 @@ impl AssetOperations for IskAccount {
         })
     }
 
-    fn step_month(&mut self, market_context: &MarketContext) {
-        self.balance *= dec!(1)
-            + Decimal::from_f64_retain(market_context.monthly_market_return)
-                .unwrap_or(Decimal::ZERO);
-        match market_context.calendar_month {
+    fn step_month(&mut self, market_context: &MonthlyMarketContext) {
+        self.balance *= dec!(1) + market_context.monthly_market_return;
+        match market_context.current_year_month.month() {
             3 => self.quarter_values[0] = self.balance,
             6 => self.quarter_values[1] = self.balance,
             9 => self.quarter_values[2] = self.balance,

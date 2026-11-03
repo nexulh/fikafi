@@ -2,6 +2,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::asset::AssetOperations;
+use crate::liability::Liability;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Portfolio {
@@ -11,17 +12,19 @@ pub struct Portfolio {
 }
 
 impl Portfolio {
+    #[must_use]
     pub fn total_nominal_value(&self) -> Decimal {
         self.assets
             .iter()
-            .map(|account| account.value())
+            .map(AssetOperations::value)
             .sum::<Decimal>()
             - self
                 .liabilities
                 .iter()
                 .map(|liability| match liability {
-                    crate::liability::Liability::Mortgage { principal, .. } => *principal,
-                    crate::liability::Liability::Loan { principal, .. } => *principal,
+                    Liability::Mortgage { principal, .. } | Liability::Loan { principal, .. } => {
+                        *principal
+                    }
                 })
                 .sum::<Decimal>()
             + self.liquid_cash
